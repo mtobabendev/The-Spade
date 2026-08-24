@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420">
+  <defs>
+    <linearGradient id="slotPip" x1="150" y1="118" x2="150" y2="262" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8ecf3"/>
+      <stop offset="0.55" stop-color="#c9cdd8"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="420" rx="22" fill="#07060c"/>
+  <rect x="2" y="2" width="296" height="416" rx="20" fill="none" stroke="#7c3aed" stroke-width="3"/>
+  <rect x="18" y="18" width="264" height="384" rx="12" fill="none" stroke="#c9cdd8" stroke-width="1.5" opacity="0.72"/>
+  <path fill="url(#slotPip)" d="M150 118C102 166 82 190 82 214C82 238 106 254 134 242C130 254 118 266 106 266H194C182 266 170 254 166 242C194 254 218 238 218 214C218 190 198 166 150 118Z"/>
+  <text x="150" y="392" text-anchor="middle" font-family="Liberation Sans, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="5.5" fill="#c9cdd8" opacity="0.42">SWAP</text>
+</svg>
