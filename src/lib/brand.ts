@@ -14,8 +14,8 @@ export const brand = {
   inviteCode: "ACEOFSPADES",
   inviteHint: "Ask the counter. Or Matt.",
   supportEmail: "matt@wildcarddev.com",
-  publicMeetingsUrl: "https://need-a-chair.vercel.app",
-  publicEasyUrl: "https://need-a-chair.vercel.app/easy",
+  publicMeetingsUrl: "https://the-spade.vercel.app/meetings",
+  publicEasyUrl: "https://the-spade.vercel.app/easy",
   colors: {
     black: "#07060c",
     purple: "#7c3aed",

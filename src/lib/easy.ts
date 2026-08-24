@@ -1,6 +1,6 @@
 /** Stable public jump. Phones scan this — not a preview origin. */
-export const PUBLIC_MEETINGS_URL = "https://need-a-chair.vercel.app";
-export const PUBLIC_EASY_URL = "https://need-a-chair.vercel.app/easy";
+export const PUBLIC_MEETINGS_URL = "https://the-spade.vercel.app/meetings";
+export const PUBLIC_EASY_URL = "https://the-spade.vercel.app/easy";
 
 export const EASY_QR = {
   errorCorrection: "H" as const,
