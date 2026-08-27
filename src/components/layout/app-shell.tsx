@@ -62,6 +62,14 @@ export function AppShell() {
           </Link>
           <p className="hidden text-xs text-muted sm:block">{brand.shop} · {brand.city}</p>
           <div className="ml-auto flex items-center gap-3">
+            <a
+              href="https://square.link/u/YnAVr8ht"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center rounded-md border border-pink/70 px-3 font-mono text-xs uppercase tracking-[0.16em] text-pink transition hover:bg-pink hover:text-bg"
+            >
+              Donate
+            </a>
             <Link
               to="/cart"
               className="relative inline-flex h-11 items-center rounded-md px-3 text-sm text-muted hover:text-fg"

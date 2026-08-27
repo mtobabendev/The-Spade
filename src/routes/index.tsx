@@ -19,7 +19,17 @@ function Landing() {
           <SpadeMark className="size-8" />
           <span className="font-display text-sm font-semibold">{brand.name}</span>
         </div>
-        <p className="hidden text-xs text-muted sm:block">{brand.legalName}</p>
+        <div className="flex items-center gap-3">
+          <p className="hidden text-xs text-muted sm:block">{brand.legalName}</p>
+          <a
+            href="https://square.link/u/YnAVr8ht"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-9 items-center rounded-md border border-pink/70 px-3 font-mono text-xs uppercase tracking-[0.16em] text-pink transition hover:bg-pink hover:text-bg"
+          >
+            Donate
+          </a>
+        </div>
       </header>
 
       <section className="relative mx-auto grid max-w-6xl gap-10 px-4 pb-16 pt-6 md:grid-cols-[1.1fr_0.9fr] md:items-center md:pt-16">
