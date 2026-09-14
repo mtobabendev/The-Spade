@@ -24,6 +24,7 @@ import { Route as TablePennyRouteImport } from './routes/_table/penny'
 import { Route as TableSellRouteImport } from './routes/_table/sell'
 import { Route as TableSheetsRouteImport } from './routes/_table/sheets'
 import { Route as TableVaultRouteImport } from './routes/_table/vault'
+import { Route as ApiOperatorRouteImport } from './routes/api/operator'
 import { Route as ApiRtcRouteImport } from './routes/api/rtc'
 import { Route as TableFloorTableIdRouteImport } from './routes/_table/floor.$tableId'
 import { Route as TableNexusIndexRouteImport } from './routes/_table/nexus.index'
@@ -111,6 +112,11 @@ const TableVaultRoute = TableVaultRouteImport.update({
   path: '/vault',
   getParentRoute: () => TableRoute,
 } as any)
+const ApiOperatorRoute = ApiOperatorRouteImport.update({
+  id: '/api/operator',
+  path: '/api/operator',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRtcRoute = ApiRtcRouteImport.update({
   id: '/api/rtc',
   path: '/api/rtc',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/sell': typeof TableSellRoute
   '/sheets': typeof TableSheetsRouteWithChildren
   '/vault': typeof TableVaultRouteWithChildren
+  '/api/operator': typeof ApiOperatorRoute
   '/api/rtc': typeof ApiRtcRoute
   '/floor/$tableId': typeof TableFloorTableIdRoute
   '/nexus/approach': typeof TableNexusApproachRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/sell': typeof TableSellRoute
   '/sheets': typeof TableSheetsRouteWithChildren
   '/vault': typeof TableVaultRouteWithChildren
+  '/api/operator': typeof ApiOperatorRoute
   '/api/rtc': typeof ApiRtcRoute
   '/floor/$tableId': typeof TableFloorTableIdRoute
   '/nexus/approach': typeof TableNexusApproachRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/_table/sell': typeof TableSellRoute
   '/_table/sheets': typeof TableSheetsRouteWithChildren
   '/_table/vault': typeof TableVaultRouteWithChildren
+  '/api/operator': typeof ApiOperatorRoute
   '/api/rtc': typeof ApiRtcRoute
   '/_table/floor/$tableId': typeof TableFloorTableIdRoute
   '/_table/nexus/approach': typeof TableNexusApproachRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/sell'
     | '/sheets'
     | '/vault'
+    | '/api/operator'
     | '/api/rtc'
     | '/floor/$tableId'
     | '/nexus/approach'
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/sell'
     | '/sheets'
     | '/vault'
+    | '/api/operator'
     | '/api/rtc'
     | '/floor/$tableId'
     | '/nexus/approach'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/_table/sell'
     | '/_table/sheets'
     | '/_table/vault'
+    | '/api/operator'
     | '/api/rtc'
     | '/_table/floor/$tableId'
     | '/_table/nexus/approach'
@@ -350,6 +362,7 @@ export interface RootRouteChildren {
   EasyRoute: typeof EasyRoute
   LoginRoute: typeof LoginRoute
   MeetingsRoute: typeof MeetingsRoute
+  ApiOperatorRoute: typeof ApiOperatorRoute
   ApiRtcRoute: typeof ApiRtcRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -460,6 +473,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/vault'
       preLoaderRoute: typeof TableVaultRouteImport
       parentRoute: typeof TableRoute
+    }
+    '/api/operator': {
+      id: '/api/operator'
+      path: '/api/operator'
+      fullPath: '/api/operator'
+      preLoaderRoute: typeof ApiOperatorRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/rtc': {
       id: '/api/rtc'
@@ -642,6 +662,7 @@ const rootRouteChildren: RootRouteChildren = {
   EasyRoute: EasyRoute,
   LoginRoute: LoginRoute,
   MeetingsRoute: MeetingsRoute,
+  ApiOperatorRoute: ApiOperatorRoute,
   ApiRtcRoute: ApiRtcRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
