@@ -1,9 +1,10 @@
 /**
  * WebRTC signaling for the two-person Spade room.
+ * Redis is only the short-lived mailbox for offer/answer/ICE messages.
  */
 import { z } from "zod";
-import { getSql, type Sql } from "@/lib/db";
-import type { PeerRow, RtcPollResponse, SignalRow } from "./p2p";
+import { redisCommand } from "./redis.server";
+import type { RtcPollResponse, SignalRow } from "./p2p";
 
 const ID = z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/);
 const signalSchema = z.object({
@@ -13,83 +14,68 @@ const signalSchema = z.object({
 });
 const leaveSchema = z.object({ op: z.literal("leave"), room: ID, peer: ID });
 const postSchema = z.discriminatedUnion("op", [signalSchema, leaveSchema]);
-const PEER_TTL_SECONDS = 30;
-const SIGNAL_TTL_SECONDS = 60;
-const globalRef = globalThis as typeof globalThis & { __rtcSchemaPromise__?: Promise<void> };
+const SIGNAL_TTL_SECONDS = 120;
 
-function ensureSchema(sql: Sql): Promise<void> {
-  globalRef.__rtcSchemaPromise__ ??= (async () => {
-    await sql.query(`CREATE TABLE IF NOT EXISTS webrtc_peers (
-      room TEXT NOT NULL, peer_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT '',
-      last_seen TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (room, peer_id)
-    )`);
-    await sql.query(`CREATE TABLE IF NOT EXISTS webrtc_signals (
-      id BIGSERIAL PRIMARY KEY, room TEXT NOT NULL, to_peer TEXT NOT NULL,
-      from_peer TEXT NOT NULL, kind TEXT NOT NULL, payload JSONB NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`);
-    await sql.query(`CREATE INDEX IF NOT EXISTS webrtc_signals_inbox
-      ON webrtc_signals (room, to_peer, id)`);
-  })().catch((err) => { globalRef.__rtcSchemaPromise__ = undefined; throw err; });
-  return globalRef.__rtcSchemaPromise__;
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 }
+function inbox(room: string, peer: string) { return `spade:rtc:${room}:${peer}:inbox`; }
+function signalKey(room: string, id: number) { return `spade:rtc:${room}:signal:${id}`; }
+function seqKey(room: string) { return `spade:rtc:${room}:seq`; }
 
-async function roster(sql: Sql, room: string): Promise<PeerRow[]> {
-  const rows = await sql.query<{ peer_id: string; name: string }>(
-    `SELECT peer_id,name FROM webrtc_peers
-     WHERE room=$1 AND last_seen > now() - ($2 * interval '1 second')
-     ORDER BY peer_id LIMIT 32`, [room, PEER_TTL_SECONDS]);
-  return rows.map((r) => ({ id:r.peer_id, name:r.name }));
-}
-async function touchPeer(sql: Sql, room:string, peer:string, name:string) {
-  await sql.query(`INSERT INTO webrtc_peers(room,peer_id,name,last_seen)
-    VALUES($1,$2,$3,now()) ON CONFLICT(room,peer_id)
-    DO UPDATE SET last_seen=now(),name=EXCLUDED.name`, [room,peer,name]);
-}
-async function prune(sql: Sql) {
-  await sql.query(`DELETE FROM webrtc_signals WHERE created_at < now() - ($1 * interval '1 second')`, [SIGNAL_TTL_SECONDS]);
-  await sql.query(`DELETE FROM webrtc_peers WHERE last_seen < now() - ($1 * interval '1 second')`, [PEER_TTL_SECONDS]);
-}
-function json(body:unknown,status=200){return new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json","cache-control":"no-store"}})}
-
-async function handleGet(url:URL):Promise<Response>{
-  const parsed=z.object({room:ID,peer:ID,name:z.string().max(64).default(""),since:z.coerce.number().int().min(0).default(0)}).safeParse({
-    room:url.searchParams.get("room"),peer:url.searchParams.get("peer"),
-    name:url.searchParams.get("name")??"",since:url.searchParams.get("since")??0
+async function handleGet(url: URL): Promise<Response> {
+  const parsed = z.object({ room: ID, peer: ID, since: z.coerce.number().int().min(0).default(0) }).safeParse({
+    room: url.searchParams.get("room"), peer: url.searchParams.get("peer"), since: url.searchParams.get("since") ?? 0,
   });
-  if(!parsed.success)return json({error:"invalid query",detail:parsed.error.issues},400);
-  const {room,peer,name,since}=parsed.data;
-  const sql=await getSql(); await ensureSchema(sql);
-  if(since===0) await prune(sql);
-  await touchPeer(sql,room,peer,name);
-  const rows=await sql.query<{id:number;from_peer:string;kind:SignalRow["kind"];payload:unknown}>(
-    `SELECT id,from_peer,kind,payload FROM webrtc_signals
-     WHERE room=$1 AND to_peer=$2 AND id>$3 ORDER BY id LIMIT 200`,[room,peer,since]);
-  const body:RtcPollResponse={peers:await roster(sql,room),signals:rows.map(r=>({id:r.id,from:r.from_peer,kind:r.kind,payload:r.payload}))};
+  if (!parsed.success) return json({ error: "invalid query", detail: parsed.error.issues }, 400);
+  const { room, peer, since } = parsed.data;
+  const idsRaw = await redisCommand(["ZRANGEBYSCORE", inbox(room, peer), `(${since}`, "+inf", "LIMIT", 0, 200]);
+  const ids = Array.isArray(idsRaw) ? idsRaw.filter((v): v is string => typeof v === "string") : [];
+  const signals: SignalRow[] = [];
+  if (ids.length) {
+    const valuesRaw = await redisCommand(["MGET", ...ids.map((id) => signalKey(room, Number(id)))]);
+    const values = Array.isArray(valuesRaw) ? valuesRaw : [];
+    for (const value of values) {
+      if (typeof value !== "string") continue;
+      try {
+        const signal = JSON.parse(value) as SignalRow;
+        signals.push(signal);
+      } catch { /* expired or malformed mailbox entry: ignore */ }
+    }
+  }
+  const body: RtcPollResponse = { peers: [], signals };
   return json(body);
 }
 
-async function handlePost(request:Request):Promise<Response>{
-  let body:unknown; try{body=await request.json()}catch{return json({error:"invalid JSON"},400)}
-  const parsed=postSchema.safeParse(body);
-  if(!parsed.success)return json({error:"invalid request",detail:parsed.error.issues},400);
-  const msg=parsed.data; const sql=await getSql(); await ensureSchema(sql);
-  if(msg.op==="signal") await sql.query(
-    `INSERT INTO webrtc_signals(room,to_peer,from_peer,kind,payload)
-     VALUES($1,$2,$3,$4,$5::jsonb)`,
-    [msg.room,msg.to,msg.from,msg.kind,JSON.stringify(msg.payload)]);
-  else await sql.query(`DELETE FROM webrtc_peers WHERE room=$1 AND peer_id=$2`,[msg.room,msg.peer]);
-  return json({ok:true});
+async function handlePost(request: Request): Promise<Response> {
+  let body: unknown;
+  try { body = await request.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+  const parsed = postSchema.safeParse(body);
+  if (!parsed.success) return json({ error: "invalid request", detail: parsed.error.issues }, 400);
+  const msg = parsed.data;
+  if (msg.op === "leave") return json({ ok: true });
+
+  const nextIdRaw = await redisCommand(["INCR", seqKey(msg.room)]);
+  if (typeof nextIdRaw !== "number") throw new Error("Redis did not return a signal id");
+  const id = nextIdRaw;
+  const stored: SignalRow = { id, from: msg.from, kind: msg.kind, payload: msg.payload };
+  const key = signalKey(msg.room, id);
+  const box = inbox(msg.room, msg.to);
+  await redisCommand(["SET", key, JSON.stringify(stored), "EX", SIGNAL_TTL_SECONDS]);
+  await redisCommand(["ZADD", box, id, id]);
+  await redisCommand(["EXPIRE", box, SIGNAL_TTL_SECONDS]);
+  await redisCommand(["EXPIRE", seqKey(msg.room), SIGNAL_TTL_SECONDS * 2]);
+  return json({ ok: true, id });
 }
 
-export async function handleSignaling(request:Request):Promise<Response>{
-  try{
-    if(request.method==="GET")return await handleGet(new URL(request.url));
-    if(request.method==="POST")return await handlePost(request);
-    return json({error:"method not allowed"},405);
-  }catch(error){
-    const message=error instanceof Error?error.message:String(error);
-    console.error("[rtc] signaling error:",error);
-    return json({error:"signaling failed",detail:message},500);
+export async function handleSignaling(request: Request): Promise<Response> {
+  try {
+    if (request.method === "GET") return await handleGet(new URL(request.url));
+    if (request.method === "POST") return await handlePost(request);
+    return json({ error: "method not allowed" }, 405);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[rtc] Redis signaling error:", error);
+    return json({ error: "signaling failed", detail: message }, 500);
   }
 }
