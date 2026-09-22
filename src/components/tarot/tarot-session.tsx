@@ -19,16 +19,25 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
   const cursor = useRef(0);
   const [incomingName, setIncomingName] = useState<string | null>(null);
   const [status, setStatus] = useState(role === "operator" ? "Waiting for guest to call…" : "Calling host…");
+  const [debug, setDebug] = useState<string[]>([`ROLE=${role}`, `ROOM=${room}`, `SELF=${selfId}`]);
   const [muted, setMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
+  const log = (line:string) => setDebug(current => [...current.slice(-11), `${new Date().toLocaleTimeString()} ${line}`]);
 
   async function send(to:string, kind:"offer"|"answer"|"ice", payload:any) {
-    await fetch("/api/rtc", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({op:"signal",room,from:selfId,to,kind,payload}) });
+    try {
+      const res = await fetch("/api/rtc", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({op:"signal",room,from:selfId,to,kind,payload}) });
+      log(`${kind.toUpperCase()} POST → ${res.status}`);
+      if (!res.ok) log(`POST BODY → ${(await res.text()).slice(0,180)}`);
+      return res.ok;
+    } catch(e) { log(`${kind.toUpperCase()} POST ERROR → ${e instanceof Error ? e.message : String(e)}`); return false; }
   }
 
   async function media() {
     if (localStream.current) return localStream.current;
+    log("REQUESTING CAMERA/MIC");
     const stream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    log(`MEDIA OK → video=${stream.getVideoTracks().length} audio=${stream.getAudioTracks().length}`);
     localStream.current = stream;
     if (localVideo.current) localVideo.current.srcObject = stream;
     return stream;
@@ -38,9 +47,10 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
     pc.current?.close();
     const next = new RTCPeerConnection({iceServers:[{urls:["stun:stun.l.google.com:19302","stun:stun.cloudflare.com:3478"]}]});
     pc.current = next;
-    next.onicecandidate = (e) => { if(e.candidate) void send(remoteId,"ice",e.candidate.toJSON()); };
-    next.ontrack = (e) => { if(remoteVideo.current) remoteVideo.current.srcObject = e.streams[0]; };
-    next.onconnectionstatechange = () => setStatus(next.connectionState === "connected" ? "Connected" : `Connection: ${next.connectionState}`);
+    log(`PEER CREATED → ${remoteId}`);
+    next.onicecandidate = (e) => { if(e.candidate) { log(`ICE GENERATED → ${remoteId}`); void send(remoteId,"ice",e.candidate.toJSON()); } };
+    next.ontrack = (e) => { log(`REMOTE TRACK → ${e.track.kind}`); if(remoteVideo.current) remoteVideo.current.srcObject = e.streams[0]; };
+    next.onconnectionstatechange = () => { log(`PEER STATE → ${next.connectionState}`); setStatus(next.connectionState === "connected" ? "Connected" : `Connection: ${next.connectionState}`); };
     return next;
   }
 
@@ -51,28 +61,32 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
       stream.getTracks().forEach(t => next.addTrack(t,stream));
       const offer = await next.createOffer();
       await next.setLocalDescription(offer);
-      await send("host","offer",offer);
-      setStatus("Waiting for host to accept…");
-    } catch(e) { setStatus(`Camera/mic error: ${e instanceof Error ? e.message : "unknown error"}`); }
+      log("OFFER CREATED");
+      const sent = await send("host","offer",offer);
+      setStatus(sent ? "Waiting for host to accept…" : "Offer failed to reach signaling server");
+    } catch(e) { const message=e instanceof Error ? e.message : "unknown error"; log(`GUEST START ERROR → ${message}`); setStatus(`Camera/mic error: ${message}`); }
   }
 
   async function acceptCall() {
     const call = incomingOffer.current;
-    if(!call) return;
+    if(!call) { log("ACCEPT CLICKED BUT NO OFFER"); return; }
     try {
+      log(`ACCEPTING → ${call.from}`);
       const stream = await media();
       const next = newPeer(call.from);
       stream.getTracks().forEach(t => next.addTrack(t,stream));
       await next.setRemoteDescription(call.offer);
+      log("HOST REMOTE DESCRIPTION SET");
       for(const c of candidateQueue.current) await next.addIceCandidate(c);
       candidateQueue.current=[];
       const answer=await next.createAnswer();
       await next.setLocalDescription(answer);
+      log("ANSWER CREATED");
       await send(call.from,"answer",answer);
       incomingOffer.current=null;
       setIncomingName(null);
       setStatus("Connecting…");
-    } catch(e) { setStatus(`Accept failed: ${e instanceof Error ? e.message : "unknown error"}`); }
+    } catch(e) { const message=e instanceof Error ? e.message : "unknown error"; log(`ACCEPT ERROR → ${message}`); setStatus(`Accept failed: ${message}`); }
   }
 
   useEffect(() => {
@@ -82,31 +96,36 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
       try {
         const q=new URLSearchParams({room,peer:selfId,name,since:String(cursor.current)});
         const res=await fetch(`/api/rtc?${q}`,{cache:"no-store"});
+        if(!res.ok) log(`POLL → ${res.status}`);
         if(res.ok){
           const body=await res.json() as {signals:WireSignal[]};
+          if(body.signals.length) log(`POLL → ${res.status}, SIGNALS=${body.signals.length}`);
           for(const sig of body.signals){
             cursor.current=Math.max(cursor.current,sig.id);
+            log(`RECEIVED ${sig.kind.toUpperCase()} ← ${sig.from}`);
             if(sig.kind==="offer" && role==="operator"){
               incomingOffer.current={from:sig.from,offer:sig.payload};
-              setIncomingName(guestName || "Guest");
+              setIncomingName("Guest");
               setStatus("Guest is waiting for your approval");
+              log("ACCEPT BUTTON ARMED");
             } else if(sig.kind==="answer" && role==="guest" && pc.current){
               await pc.current.setRemoteDescription(sig.payload);
+              log("GUEST REMOTE DESCRIPTION SET");
               for(const c of candidateQueue.current) await pc.current.addIceCandidate(c);
               candidateQueue.current=[];
             } else if(sig.kind==="ice"){
-              if(pc.current?.remoteDescription) await pc.current.addIceCandidate(sig.payload);
-              else candidateQueue.current.push(sig.payload);
+              if(pc.current?.remoteDescription) { await pc.current.addIceCandidate(sig.payload); log("ICE ADDED"); }
+              else { candidateQueue.current.push(sig.payload); log(`ICE QUEUED → ${candidateQueue.current.length}`); }
             }
           }
         }
-      } catch { /* retry */ }
+      } catch(e) { log(`POLL ERROR → ${e instanceof Error ? e.message : String(e)}`); }
       if(!dead) timer=window.setTimeout(poll,500);
     }
+    log("SIGNAL POLL STARTED");
     void poll();
     if(role==="guest") void startGuestCall();
     return()=>{dead=true;if(timer)clearTimeout(timer);pc.current?.close();localStream.current?.getTracks().forEach(t=>t.stop());void fetch("/api/rtc",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({op:"leave",room,peer:selfId}),keepalive:true});};
-  // one call session per mounted modal
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
@@ -115,8 +134,9 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
 
   return <section className="session-shell" aria-labelledby="session-title">
     <div className="session-heading"><div><p className="eyebrow"><ShieldCheck size={15}/> Private video room</p><h2 id="session-title">Room {code}</h2></div><button className="ghost-button" type="button" onClick={()=>navigator.clipboard?.writeText(code)}><Copy size={16}/> Copy code</button></div>
-    {role==="operator" ? <div className="participant-picker" style={{position:"relative",zIndex:50}}><p className="eyebrow">HOST CONTROLS</p>{incomingName ? <button className="primary-button" style={{width:"100%",minHeight:56,fontSize:18}} type="button" onClick={()=>void acceptCall()}>ACCEPT {incomingName.toUpperCase()}</button> : <p>Waiting for guest request…</p>}</div> : null}
+    {role==="operator" ? <div className="participant-picker" style={{position:"relative",zIndex:50}}><p className="eyebrow">HOST CONTROLS</p>{incomingName ? <button className="primary-button" style={{width:"100%",minHeight:56,fontSize:18}} type="button" onClick={()=>void acceptCall()}>ACCEPT GUEST</button> : <p>Waiting for guest request…</p>}</div> : null}
     <p className="form-note">{status}</p>
+    <div style={{background:"#080808",border:"1px solid #777",padding:"10px",margin:"10px 0",fontFamily:"monospace",fontSize:"12px",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:"190px",overflowY:"auto"}} aria-label="Signaling diagnostics"><strong>SIGNAL TRACE</strong>{"\n"}{debug.join("\n")}</div>
     <div className="video-grid"><div className="reading-video"><video ref={remoteVideo} autoPlay playsInline /></div><div className="local-video"><div className="reading-video"><video ref={localVideo} autoPlay playsInline muted /></div></div></div>
     <div className="call-controls"><button type="button" onClick={toggleMute}>{muted?<MicOff/>:<Mic/>}<span>{muted?"Unmute":"Mute"}</span></button><button type="button" onClick={toggleCam}>{camOff?<CameraOff/>:<Camera/>}<span>{camOff?"Camera on":"Camera off"}</span></button><button className="end-call" type="button" onClick={onLeave}><PhoneOff/><span>Leave</span></button></div>
   </section>;
