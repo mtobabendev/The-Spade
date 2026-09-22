@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, CameraOff, Copy, Mic, MicOff, PhoneOff, ShieldCheck, Video } from "lucide-react";
+import { Camera, CameraOff, Check, Copy, Mic, MicOff, PhoneOff, ShieldCheck, Video } from "lucide-react";
 import { useAvTable } from "@/lib/multiplayer/use-av-table";
+import { useP2PRoom } from "@/lib/multiplayer/use-p2p-room";
 
 type SessionRole = "guest" | "operator";
 interface TarotSessionProps { code: string; guestName: string; role: SessionRole; onLeave: () => void; onActivate?: () => void }
@@ -14,12 +15,36 @@ function StreamVideo({ stream, muted, label }: { stream: MediaStream | null; mut
 export function TarotSession({ code, guestName, role, onLeave }: TarotSessionProps) {
   const room = `tarot-${code.toLowerCase()}`;
   const displayName = role === "operator" ? "Host" : guestName;
+  const lobby = useP2PRoom({ room: `${room}-lobby`, name: displayName });
+  const [admitted, setAdmitted] = useState(role === "operator");
+  const [acceptedIds, setAcceptedIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => lobby.onMessage((from, data) => {
+    if (role !== "guest" || typeof data !== "object" || !data || !("type" in data)) return;
+    if (data.type === "admitted") setAdmitted(true);
+  }), [lobby.onMessage, role]);
+
+  const waitingGuests = role === "operator" ? lobby.peers.filter((peer) => !acceptedIds.has(peer.id)) : [];
+
+  function acceptGuest(peerId: string) {
+    lobby.send({ type: "admitted" }, peerId);
+    setAcceptedIds((current) => new Set(current).add(peerId));
+  }
+
   return <section className="session-shell" aria-labelledby="session-title">
     <div className="session-heading">
       <div><p className="eyebrow"><ShieldCheck size={15} /> Private video room</p><h2 id="session-title">Room {code}</h2></div>
       <button className="ghost-button" type="button" onClick={() => navigator.clipboard?.writeText(code)}><Copy size={16} /> Copy code</button>
     </div>
-    <ActiveVideoRoom room={room} name={displayName} role={role} onLeave={onLeave} />
+
+    {role === "operator" && waitingGuests.length > 0 ? <div className="participant-picker" aria-label="Guests waiting for admission">
+      <p className="eyebrow">Waiting to join</p>
+      <div className="call-controls">{waitingGuests.map((peer) => <button className="primary-button" type="button" key={peer.id} onClick={() => acceptGuest(peer.id)}><Check size={17} /><span>ACCEPT {peer.name}</span></button>)}</div>
+    </div> : null}
+
+    {admitted ? <ActiveVideoRoom room={room} name={displayName} role={role} onLeave={onLeave} /> : <div className="waiting-room">
+      <div><p className="eyebrow">Waiting for host</p><h3>The host has been notified.</h3><p>Keep this screen open. Your camera and microphone will start after the host taps ACCEPT.</p><span className="waiting-pulse">Waiting for host to accept you</span></div>
+    </div>}
   </section>;
 }
 
@@ -37,9 +62,7 @@ function ActiveVideoRoom({ room, name, role, onLeave }: { room: string; name: st
   return <div className="active-room">
     {role === "operator" && av.remotes.length > 0 ? <div className="participant-picker" aria-label="Room participants">
       <p className="eyebrow">Participants · {av.remotes.length + 1} in room</p>
-      <div className="call-controls">
-        {av.remotes.map((remote) => <button type="button" key={remote.id} aria-pressed={remote.id === primaryRemote?.id} onClick={() => setSelectedPeerId(remote.id)}><Video size={16} /><span>{remote.name}</span></button>)}
-      </div>
+      <div className="call-controls">{av.remotes.map((remote) => <button type="button" key={remote.id} aria-pressed={remote.id === primaryRemote?.id} onClick={() => setSelectedPeerId(remote.id)}><Video size={16} /><span>{remote.name}</span></button>)}</div>
     </div> : null}
     <div className="video-grid">
       <StreamVideo stream={primaryRemote?.stream ?? null} label={primaryRemote?.name ?? "Waiting for the other person"} />
