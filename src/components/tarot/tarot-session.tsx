@@ -56,12 +56,16 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
         remoteStream.current.addTrack(e.track);
       }
       const video = remoteVideo.current;
-      if (video) {
+      if (video && video.srcObject !== remoteStream.current) {
         video.srcObject = remoteStream.current;
         video.muted = false;
         video.autoplay = true;
         video.playsInline = true;
-        void video.play().then(() => log(`REMOTE ${e.track.kind.toUpperCase()} PLAYING`)).catch(err => log(`REMOTE PLAY ERROR → ${err instanceof Error ? err.message : String(err)}`));
+      }
+      if (video && e.track.kind === "video") {
+        window.setTimeout(() => {
+          void video.play().then(() => log("REMOTE VIDEO PLAYING")).catch(err => log(`REMOTE PLAY ERROR → ${err instanceof Error ? err.message : String(err)}`));
+        }, 0);
       }
     };
     next.onconnectionstatechange = () => { log(`PEER STATE → ${next.connectionState}`); setStatus(next.connectionState === "connected" ? "Connected" : `Connection: ${next.connectionState}`); };
