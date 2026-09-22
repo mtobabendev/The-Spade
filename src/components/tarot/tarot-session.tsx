@@ -5,14 +5,21 @@ type SessionRole = "guest" | "operator";
 interface TarotSessionProps { code:string; guestName:string; role:SessionRole; onLeave:()=>void; onActivate?:()=>void }
 type WireSignal = { id:number; from:string; kind:"offer"|"answer"|"ice"; payload:any };
 
-const RTC_CONFIG: RTCConfiguration = { iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun.cloudflare.com:3478"}] };
+const RTC_CONFIG: RTCConfiguration = { iceServers:[
+  {urls:"stun:stun.l.google.com:19302"},
+  {urls:"stun:stun.cloudflare.com:3478"},
+  {urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},
+  {urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},
+  {urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"},
+  {urls:"turns:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}
+] };
 
 function waitForIce(pc:RTCPeerConnection) {
   if (pc.iceGatheringState === "complete") return Promise.resolve();
   return new Promise<void>((resolve) => {
     const done = () => { if (pc.iceGatheringState === "complete") { pc.removeEventListener("icegatheringstatechange", done); resolve(); } };
     pc.addEventListener("icegatheringstatechange", done);
-    window.setTimeout(() => { pc.removeEventListener("icegatheringstatechange", done); resolve(); }, 5000);
+    window.setTimeout(() => { pc.removeEventListener("icegatheringstatechange", done); resolve(); }, 8000);
   });
 }
 
