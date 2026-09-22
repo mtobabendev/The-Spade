@@ -4,9 +4,24 @@ import tls from "node:tls";
 type RedisValue = string | number | null | RedisValue[];
 
 function redisUrl(): URL {
-  const raw = process.env.STORAGE_URL ?? process.env.REDIS_URL;
-  if (!raw) throw new Error("Redis is not connected: STORAGE_URL/REDIS_URL is missing");
-  return new URL(raw);
+  // Vercel Marketplace integrations can expose the connection as REDIS_URL,
+  // STORAGE_URL, or (when a custom prefix is used) STORAGE_REDIS_URL.
+  const raw =
+    process.env.STORAGE_REDIS_URL ??
+    process.env.REDIS_URL ??
+    process.env.STORAGE_URL;
+
+  if (!raw) {
+    throw new Error(
+      "Redis is not connected: expected STORAGE_REDIS_URL, REDIS_URL, or STORAGE_URL",
+    );
+  }
+
+  const url = new URL(raw);
+  if (url.protocol !== "redis:" && url.protocol !== "rediss:") {
+    throw new Error(`Unsupported Redis URL protocol: ${url.protocol}`);
+  }
+  return url;
 }
 
 function encode(args: Array<string | number>): Buffer {
