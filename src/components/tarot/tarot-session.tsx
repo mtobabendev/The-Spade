@@ -13,7 +13,7 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
-  const localStream = useRef<MediaStream | null>(null);
+  const localStream = useRef<MediaStream | null>(null);\n  const remoteStream = useRef<MediaStream>(new MediaStream());
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const incomingOffer = useRef<{ from:string; offer:RTCSessionDescriptionInit } | null>(null);
   const cursor = useRef(0);
@@ -49,7 +49,7 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
     pc.current = next;
     log(`PEER CREATED → ${remoteId}`);
     next.onicecandidate = (e) => { if(e.candidate) { log(`ICE GENERATED → ${remoteId}`); void send(remoteId,"ice",e.candidate.toJSON()); } };
-    next.ontrack = (e) => { log(`REMOTE TRACK → ${e.track.kind}`); if(remoteVideo.current) remoteVideo.current.srcObject = e.streams[0]; };
+    next.ontrack = (e) => {\n      log(`REMOTE TRACK → ${e.track.kind}`);\n      const stream = e.streams[0] ?? remoteStream.current;\n      if (!e.streams[0] && !remoteStream.current.getTracks().some(track => track.id === e.track.id)) remoteStream.current.addTrack(e.track);\n      if (remoteVideo.current) {\n        if (remoteVideo.current.srcObject !== stream) remoteVideo.current.srcObject = stream;\n        void remoteVideo.current.play().catch(() => log("REMOTE PLAY WAITING FOR USER GESTURE"));\n      }\n    };
     next.onconnectionstatechange = () => { log(`PEER STATE → ${next.connectionState}`); setStatus(next.connectionState === "connected" ? "Connected" : `Connection: ${next.connectionState}`); };
     return next;
   }
