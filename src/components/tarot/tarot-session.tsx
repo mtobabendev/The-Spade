@@ -21,8 +21,21 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
   const [status, setStatus] = useState(role === "operator" ? "Waiting for guest to call…" : "Calling host…");
   const [debug, setDebug] = useState<string[]>([`ROLE=${role}`, `ROOM=${room}`, `SELF=${selfId}`]);
   const [muted, setMuted] = useState(false);
-  const [camOff, setCamOff] = useState(false);
+  const [camOff, setCamOff] = useState(false);\n  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const log = (line:string) => setDebug(current => [...current.slice(-11), `${new Date().toLocaleTimeString()} ${line}`]);
+
+  useEffect(() => {
+    const video = remoteVideo.current;
+    if (!video || !remoteStream) return;
+    if (video.srcObject !== remoteStream) video.srcObject = remoteStream;
+    const play = () => {
+      void video.play().then(() => log("REMOTE VIDEO PLAYING")).catch((error) => log(`REMOTE VIDEO PLAY BLOCKED → ${error instanceof Error ? error.message : String(error)}`));
+    };
+    if (video.readyState >= 1) play();
+    else video.addEventListener("loadedmetadata", play, { once: true });
+    return () => video.removeEventListener("loadedmetadata", play);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteStream]);
 
   async function send(to:string, kind:"offer"|"answer"|"ice", payload:any) {
     try {
@@ -51,11 +64,10 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
     next.onicecandidate = (e) => { if(e.candidate) { log(`ICE GENERATED → ${remoteId}`); void send(remoteId,"ice",e.candidate.toJSON()); } };
     next.ontrack = (e) => {
       log(`REMOTE TRACK → ${e.track.kind}`);
-      const stream = e.streams[0];
-      if (remoteVideo.current && stream) {
-        remoteVideo.current.srcObject = stream;
-        log(`REMOTE STREAM ATTACHED → tracks=${stream.getTracks().length}`);
-      }
+      const stream = e.streams[0] ?? new MediaStream();
+      if (!e.streams[0]) stream.addTrack(e.track);
+      setRemoteStream(stream);
+      log(`REMOTE STREAM READY → tracks=${stream.getTracks().length}`);
     };
     next.onconnectionstatechange = () => { log(`PEER STATE → ${next.connectionState}`); setStatus(next.connectionState === "connected" ? "Connected" : `Connection: ${next.connectionState}`); };
     return next;
