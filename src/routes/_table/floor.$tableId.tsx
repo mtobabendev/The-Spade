@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { TarotSession } from "@/components/tarot/tarot-session";
 import { TABLES } from "@/lib/brand";
-import { useAvTable, useP2PRoom } from "@/lib/multiplayer";
+import { useP2PRoom } from "@/lib/multiplayer";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ function TableRoom() {
   const chatRoom = `tbl${tableId}chat`.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
   const avRoom = `tbl${tableId}av`.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
   const p2p = useP2PRoom({ room: chatRoom, name });
-  const av = useAvTable(avRoom, name);
+  const [videoRole, setVideoRole] = useState<"operator" | "guest" | null>(null);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [draft, setDraft] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -28,7 +28,10 @@ function TableRoom() {
     return p2p.onMessage((_from, data) => {
       const msg = data as { chat?: string; name?: string; from?: string };
       if (!msg.chat) return;
-      setLines((prev) => [...prev, { from: msg.from ?? "?", name: msg.name ?? "Player", text: msg.chat! }]);
+      setLines((prev) => [
+        ...prev,
+        { from: msg.from ?? "?", name: msg.name ?? "Player", text: msg.chat! },
+      ]);
     });
   }, [p2p.onMessage]);
 
@@ -68,26 +71,23 @@ function TableRoom() {
         </p>
       </div>
 
-      {av.error ? <p className="text-sm text-danger">{av.error}</p> : null}
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Seat name="You" stream={av.localStream} muted />
-        {av.remotes.map((r) => (
-          <Seat key={r.id} name={r.name} stream={r.stream} />
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={av.toggleMute}>
-          {av.muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
-          {av.muted ? "Unmute" : "Mute"}
-        </Button>
-        <Button variant="outline" size="sm" onClick={av.toggleCam}>
-          {av.camOff ? <VideoOff className="size-4" /> : <Video className="size-4" />}
-          {av.camOff ? "Camera on" : "Camera off"}
-        </Button>
-      </div>
-
+      {videoRole ? (
+        <TarotSession
+          code={avRoom}
+          guestName={name}
+          role={videoRole}
+          onLeave={() => setVideoRole(null)}
+        />
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setVideoRole("operator")}>
+            Host table video
+          </Button>
+          <Button variant="outline" onClick={() => setVideoRole("guest")}>
+            Request to join table video
+          </Button>
+        </div>
+      )}
       <div className="rounded-lg border border-line bg-surface">
         <div ref={scroller} className="h-48 space-y-2 overflow-y-auto p-3 text-sm">
           {lines.length === 0 ? (
@@ -103,39 +103,16 @@ function TableRoom() {
           )}
         </div>
         <form onSubmit={sendChat} className="flex gap-2 border-t border-line p-2">
-          <Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Say something" />
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Say something"
+          />
           <Button type="submit" size="sm">
             Send
           </Button>
         </form>
       </div>
-    </div>
-  );
-}
-
-function Seat({
-  name,
-  stream,
-  muted,
-}: {
-  name: string;
-  stream: MediaStream | null;
-  muted?: boolean;
-}) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.srcObject = stream;
-  }, [stream]);
-  return (
-    <div className="overflow-hidden rounded-md border border-line bg-raised">
-      <video
-        ref={ref}
-        autoPlay
-        playsInline
-        muted={muted}
-        className="aspect-video w-full bg-black object-cover"
-      />
-      <p className="px-3 py-2 text-xs text-muted">{name}</p>
     </div>
   );
 }
