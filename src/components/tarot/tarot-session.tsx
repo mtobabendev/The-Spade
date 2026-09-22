@@ -58,13 +58,13 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
       const video = remoteVideo.current;
       if (video && video.srcObject !== remoteStream.current) {
         video.srcObject = remoteStream.current;
-        video.muted = false;
+        video.muted = true;
         video.autoplay = true;
         video.playsInline = true;
       }
       if (video && e.track.kind === "video") {
         window.setTimeout(() => {
-          void video.play().then(() => log("REMOTE VIDEO PLAYING")).catch(err => log(`REMOTE PLAY ERROR → ${err instanceof Error ? err.message : String(err)}`));
+          void video.play().then(() => { log("REMOTE VIDEO PLAYING"); video.muted = false; }).catch(err => { log(`REMOTE PLAY ERROR → ${err instanceof Error ? err.message : String(err)}`); video.muted = true; void video.play().then(() => log("REMOTE VIDEO PLAYING MUTED")).catch(err2 => log(`REMOTE MUTED PLAY ERROR → ${err2 instanceof Error ? err2.message : String(err2)}`)); });
         }, 0);
       }
     };
