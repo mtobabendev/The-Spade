@@ -77,6 +77,14 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
       stream.getTracks().forEach(t => next.addTrack(t,stream));
       await next.setRemoteDescription(call.offer);
       log("HOST REMOTE DESCRIPTION SET");
+      const received = next.getReceivers().map(r => r.track).filter((t): t is MediaStreamTrack => Boolean(t));
+      for (const track of received) {
+        if (!remoteStream.current.getTracks().some(existing => existing.id === track.id)) remoteStream.current.addTrack(track);
+      }
+      if (remoteVideo.current) {
+        remoteVideo.current.srcObject = remoteStream.current;
+        void remoteVideo.current.play().catch(() => log("REMOTE PLAY WAITING FOR USER GESTURE"));
+      }
       for(const c of candidateQueue.current) await next.addIceCandidate(c);
       candidateQueue.current=[];
       const answer=await next.createAnswer();
