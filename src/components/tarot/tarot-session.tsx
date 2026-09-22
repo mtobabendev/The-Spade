@@ -14,7 +14,6 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
   const localStream = useRef<MediaStream | null>(null);
-  const remoteStream = useRef<MediaStream>(new MediaStream());
   const candidateQueue = useRef<RTCIceCandidateInit[]>([]);
   const incomingOffer = useRef<{ from:string; offer:RTCSessionDescriptionInit } | null>(null);
   const cursor = useRef(0);
@@ -52,20 +51,10 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
     next.onicecandidate = (e) => { if(e.candidate) { log(`ICE GENERATED → ${remoteId}`); void send(remoteId,"ice",e.candidate.toJSON()); } };
     next.ontrack = (e) => {
       log(`REMOTE TRACK → ${e.track.kind}`);
-      if (!remoteStream.current.getTracks().some(track => track.id === e.track.id)) {
-        remoteStream.current.addTrack(e.track);
-      }
-      const video = remoteVideo.current;
-      if (video && video.srcObject !== remoteStream.current) {
-        video.srcObject = remoteStream.current;
-        video.muted = true;
-        video.autoplay = true;
-        video.playsInline = true;
-      }
-      if (video && e.track.kind === "video") {
-        window.setTimeout(() => {
-          void video.play().then(() => { log("REMOTE VIDEO PLAYING"); video.muted = false; }).catch(err => { log(`REMOTE PLAY ERROR → ${err instanceof Error ? err.message : String(err)}`); video.muted = true; void video.play().then(() => log("REMOTE VIDEO PLAYING MUTED")).catch(err2 => log(`REMOTE MUTED PLAY ERROR → ${err2 instanceof Error ? err2.message : String(err2)}`)); });
-        }, 0);
+      const stream = e.streams[0];
+      if (remoteVideo.current && stream) {
+        remoteVideo.current.srcObject = stream;
+        log(`REMOTE STREAM ATTACHED → tracks=${stream.getTracks().length}`);
       }
     };
     next.onconnectionstatechange = () => { log(`PEER STATE → ${next.connectionState}`); setStatus(next.connectionState === "connected" ? "Connected" : `Connection: ${next.connectionState}`); };
@@ -95,14 +84,6 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
       stream.getTracks().forEach(t => next.addTrack(t,stream));
       await next.setRemoteDescription(call.offer);
       log("HOST REMOTE DESCRIPTION SET");
-      const received = next.getReceivers().map(r => r.track).filter((t): t is MediaStreamTrack => Boolean(t));
-      for (const track of received) {
-        if (!remoteStream.current.getTracks().some(existing => existing.id === track.id)) remoteStream.current.addTrack(track);
-      }
-      if (remoteVideo.current) {
-        remoteVideo.current.srcObject = remoteStream.current;
-        void remoteVideo.current.play().catch(() => log("REMOTE PLAY WAITING FOR USER GESTURE"));
-      }
       for(const c of candidateQueue.current) await next.addIceCandidate(c);
       candidateQueue.current=[];
       const answer=await next.createAnswer();
@@ -163,7 +144,7 @@ export function TarotSession({ code, guestName, role, onLeave }: TarotSessionPro
     {role==="operator" ? <div className="participant-picker" style={{position:"relative",zIndex:50}}><p className="eyebrow">HOST CONTROLS</p>{incomingName ? <button className="primary-button" style={{width:"100%",minHeight:56,fontSize:18}} type="button" onClick={()=>void acceptCall()}>ACCEPT GUEST</button> : <p>Waiting for guest request…</p>}</div> : null}
     <p className="form-note">{status}</p>
     <div style={{background:"#080808",border:"1px solid #777",padding:"10px",margin:"10px 0",fontFamily:"monospace",fontSize:"12px",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere",maxHeight:"190px",overflowY:"auto"}} aria-label="Signaling diagnostics"><strong>SIGNAL TRACE</strong>{"\n"}{debug.join("\n")}</div>
-    <div className="video-grid">{role==="operator" ? <><div className="reading-video"><video ref={localVideo} autoPlay playsInline muted /></div><div className="local-video"><div className="reading-video"><video ref={remoteVideo} autoPlay playsInline /></div></div></> : <><div className="reading-video"><video ref={remoteVideo} autoPlay playsInline /></div><div className="local-video"><div className="reading-video"><video ref={localVideo} autoPlay playsInline muted /></div></div></>}</div>
+    <div className="video-grid"><><div className="reading-video"><video ref={remoteVideo} autoPlay playsInline /></div><div className="local-video"><div className="reading-video"><video ref={localVideo} autoPlay playsInline muted /></div></div></></div>
     <div className="call-controls"><button type="button" onClick={toggleMute}>{muted?<MicOff/>:<Mic/>}<span>{muted?"Unmute":"Mute"}</span></button><button type="button" onClick={toggleCam}>{camOff?<CameraOff/>:<Camera/>}<span>{camOff?"Camera on":"Camera off"}</span></button><button className="end-call" type="button" onClick={onLeave}><PhoneOff/><span>Leave</span></button></div>
   </section>;
 }
